@@ -3,6 +3,9 @@ uniform sampler2D u_Depth;
 varying vec2 v_TexCoord;
 const highp float kMaxDepth = 20000.0; // In millimeters.
 
+uniform float u_DepthRangeToRenderMm;
+const float kDepthWidthToRenderMm = 350.0;
+
 float GetDepthMillimeters(vec4 depth_pixel_value) {
     return 255.0 * (depth_pixel_value.r + depth_pixel_value.g * 256.0);
 }
@@ -43,4 +46,5 @@ void main() {
     highp float normalized_depth = depth_mm / kMaxDepth;
     vec4 depth_color = vec4(PerceptColormap(normalized_depth), 1.0);
     gl_FragColor = depth_color;
+    gl_FragColor.a = clamp(1.0 - abs((depth_mm - u_DepthRangeToRenderMm) / kDepthWidthToRenderMm), 0.0, 1.0);
 }
