@@ -68,6 +68,9 @@ public class OcclusionObjectRenderer {
   private final float depthTolerancePerMm = 0.015f;
   private final float occlusionsAlpha = 0.0f;
 
+  private int occlusionBlurUniform;
+  private final float occlusionsBlur = 0.01f;
+
   // Object vertex buffer variables.
   private int vertexBufferId;
   private int verticesBaseAddress;
@@ -143,6 +146,7 @@ public class OcclusionObjectRenderer {
     depthToleranceUniform = GLES20.glGetUniformLocation(program, "u_DepthTolerancePerMm");
     occlusionAlphaUniform = GLES20.glGetUniformLocation(program, "u_OcclusionAlpha");
     depthAspectRatioUniform = GLES20.glGetUniformLocation(program, "u_DepthAspectRatio");
+    occlusionBlurUniform = GLES20.glGetUniformLocation(program, "u_OcclusionBlurAmount");
 
     modelViewUniform = GLES20.glGetUniformLocation(program, "u_ModelView");
     modelViewProjectionUniform = GLES20.glGetUniformLocation(program, "u_ModelViewProjection");
@@ -336,6 +340,7 @@ public class OcclusionObjectRenderer {
     GLES20.glUniform1f(depthToleranceUniform, depthTolerancePerMm);
     GLES20.glUniform1f(occlusionAlphaUniform, occlusionsAlpha);
     GLES20.glUniform1f(depthAspectRatioUniform, depthAspectRatio);
+    GLES20.glUniform1f(occlusionBlurUniform, occlusionsBlur);
 
     // Enable vertex arrays
     GLES20.glEnableVertexAttribArray(positionAttribute);

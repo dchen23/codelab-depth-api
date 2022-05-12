@@ -22,6 +22,7 @@ uniform mat3 u_UvTransform;
 uniform float u_DepthTolerancePerMm;
 uniform float u_OcclusionAlpha;
 uniform float u_DepthAspectRatio;
+uniform float u_OcclusionBlurAmount;
 
 uniform sampler2D u_Texture;
 
@@ -72,6 +73,57 @@ float GetVisibility(in vec2 depth_uv, in float asset_depth_mm) {
     max(visibility_depth_near, visibility_depth_far));
 
     return visibility;
+}
+
+float GetBlurredVisibilityAroundUV(in vec2 uv, in float asset_depth_mm) {
+    // Kernel used:
+    // 0   4   7   4   0
+    // 4   16  26  16  4
+    // 7   26  41  26  7
+    // 4   16  26  16  4
+    // 0   4   7   4   0
+    const float kKernelTotalWeights = 269.0;
+    float sum = 0.0;
+
+    vec2 blurriness = vec2(u_OcclusionBlurAmount,
+    u_OcclusionBlurAmount * u_DepthAspectRatio);
+
+    float current = 0.0;
+
+    current += GetVisibility(uv + vec2(-1.0, -2.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(+1.0, -2.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(-1.0, +2.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(+1.0, +2.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(-2.0, +1.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(+2.0, +1.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(-2.0, -1.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(+2.0, -1.0) * blurriness, asset_depth_mm);
+    sum += current * 4.0;
+
+    current = 0.0;
+    current += GetVisibility(uv + vec2(-2.0, -0.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(+2.0, +0.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(+0.0, +2.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(-0.0, -2.0) * blurriness, asset_depth_mm);
+    sum += current * 7.0;
+
+    current = 0.0;
+    current += GetVisibility(uv + vec2(-1.0, -1.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(+1.0, -1.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(-1.0, +1.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(+1.0, +1.0) * blurriness, asset_depth_mm);
+    sum += current * 16.0;
+
+    current = 0.0;
+    current += GetVisibility(uv + vec2(+0.0, +1.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(-0.0, -1.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(-1.0, -0.0) * blurriness, asset_depth_mm);
+    current += GetVisibility(uv + vec2(+1.0, +0.0) * blurriness, asset_depth_mm);
+    sum += current * 26.0;
+
+    sum += GetVisibility(uv , asset_depth_mm) * 41.0;
+
+    return sum / kKernelTotalWeights;
 }
 
 void main() {
@@ -131,5 +183,5 @@ void main() {
     const float kMToMm = 1000.0;
     float asset_depth_mm = v_ViewPosition.z * kMToMm * -1.;
     vec2 depth_uvs = (u_UvTransform * vec3(v_ScreenSpacePosition.xy, 1)).xy;
-    gl_FragColor.a *= GetVisibility(depth_uvs, asset_depth_mm);
+    gl_FragColor.a *= GetBlurredVisibilityAroundUV(depth_uvs, asset_depth_mm);
 }
