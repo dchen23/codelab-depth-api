@@ -34,12 +34,20 @@ public class BackgroundRenderer {
   private static final String TAG = BackgroundRenderer.class.getSimpleName();
 
   // Shader names.
+  private static final String DEPTH_VERTEX_SHADER_NAME = "shaders/background_show_depth_map.vert";
+  private static final String DEPTH_FRAGMENT_SHADER_NAME = "shaders/background_show_depth_map.frag";
   private static final String CAMERA_VERTEX_SHADER_NAME = "shaders/screenquad.vert";
   private static final String CAMERA_FRAGMENT_SHADER_NAME = "shaders/screenquad.frag";
 
   private static final int COORDS_PER_VERTEX = 2;
   private static final int TEXCOORDS_PER_VERTEX = 2;
   private static final int FLOAT_SIZE = 4;
+
+  private int depthProgram;
+  private int depthTextureParam;
+  private int depthTextureId = -1;
+  private int depthQuadPositionParam;
+  private int depthQuadTexCoordParam;
 
   private FloatBuffer quadCoords;
   private FloatBuffer quadTexCoords;
@@ -108,6 +116,30 @@ public class BackgroundRenderer {
     ShaderUtil.checkGLError(TAG, "Program parameters");
   }
 
+  public void createDepthShaders(Context context, int depthTextureId) throws IOException {
+    int vertexShader =
+        ShaderUtil.loadGLShader(
+            TAG, context, GLES20.GL_VERTEX_SHADER, DEPTH_VERTEX_SHADER_NAME);
+    int fragmentShader =
+        ShaderUtil.loadGLShader(
+            TAG, context, GLES20.GL_FRAGMENT_SHADER, DEPTH_FRAGMENT_SHADER_NAME);
+
+    depthProgram = GLES20.glCreateProgram();
+    GLES20.glAttachShader(depthProgram, vertexShader);
+    GLES20.glAttachShader(depthProgram, fragmentShader);
+    GLES20.glLinkProgram(depthProgram);
+    GLES20.glUseProgram(depthProgram);
+    ShaderUtil.checkGLError(TAG, "Program creation");
+
+    depthTextureParam = GLES20.glGetUniformLocation(depthProgram, "u_Depth");
+    ShaderUtil.checkGLError(TAG, "Program parameters");
+
+    depthQuadPositionParam = GLES20.glGetAttribLocation(depthProgram, "a_Position");
+    depthQuadTexCoordParam = GLES20.glGetAttribLocation(depthProgram, "a_TexCoord");
+
+    this.depthTextureId = depthTextureId;
+  }
+
   /**
    * Draws the AR background image. The image will be drawn such that virtual content rendered with
    * the matrices provided by {@link com.google.ar.core.Camera#getViewMatrix(float[], int)} and
@@ -172,6 +204,52 @@ public class BackgroundRenderer {
     // Disable vertex arrays
     GLES20.glDisableVertexAttribArray(quadPositionParam);
     GLES20.glDisableVertexAttribArray(quadTexCoordParam);
+
+    // Restore the depth state for further drawing.
+    GLES20.glDepthMask(true);
+    GLES20.glEnable(GLES20.GL_DEPTH_TEST);
+
+    ShaderUtil.checkGLError(TAG, "BackgroundRendererDraw");
+  }
+
+  public void drawDepth(@NonNull Frame frame) {
+    if (frame.hasDisplayGeometryChanged()) {
+      frame.transformCoordinates2d(
+          Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,
+          quadCoords,
+          Coordinates2d.TEXTURE_NORMALIZED,
+          quadTexCoords);
+    }
+
+    if (frame.getTimestamp() == 0 || depthTextureId == -1) {
+      return;
+    }
+
+    // Ensure position is rewound before use.
+    quadTexCoords.position(0);
+
+    // No need to test or write depth, the screen quad has arbitrary depth, and is expected
+    // to be drawn first.
+    GLES20.glDisable(GLES20.GL_DEPTH_TEST);
+    GLES20.glDepthMask(false);
+
+    GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+    GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, depthTextureId);
+    GLES20.glUseProgram(depthProgram);
+    GLES20.glUniform1i(depthTextureParam, 0);
+
+    // Set the vertex positions and texture coordinates.
+    GLES20.glVertexAttribPointer(
+        depthQuadPositionParam, COORDS_PER_VERTEX, GLES20.GL_FLOAT, false, 0, quadCoords);
+    GLES20.glVertexAttribPointer(
+        depthQuadTexCoordParam, TEXCOORDS_PER_VERTEX, GLES20.GL_FLOAT, false, 0, quadTexCoords);
+
+    // Draws the quad.
+    GLES20.glEnableVertexAttribArray(depthQuadPositionParam);
+    GLES20.glEnableVertexAttribArray(depthQuadTexCoordParam);
+    GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+    GLES20.glDisableVertexAttribArray(depthQuadPositionParam);
+    GLES20.glDisableVertexAttribArray(depthQuadTexCoordParam);
 
     // Restore the depth state for further drawing.
     GLES20.glDepthMask(true);

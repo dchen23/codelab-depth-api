@@ -16,4 +16,7 @@
 -->
 <resources>
   <string name="app_name">Depth Codelab</string>
+  <string translatable="false" name="show_depth">Show Depth</string>
+  <string translatable="false" name="hide_depth">Hide Depth</string>
+  <string translatable="false" name="depth_not_available">Depth Not Available</string>
 </resources>

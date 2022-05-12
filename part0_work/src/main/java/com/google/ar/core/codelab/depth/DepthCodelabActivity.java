@@ -22,6 +22,7 @@ import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.widget.Button;
 import android.widget.Toast;
 import com.google.ar.core.Anchor;
 import com.google.ar.core.ArCoreApk;
@@ -73,6 +74,7 @@ public class DepthCodelabActivity extends AppCompatActivity implements GLSurface
   private final TrackingStateHelper trackingStateHelper = new TrackingStateHelper(this);
   private TapHelper tapHelper;
   private boolean isDepthSupported;
+  private boolean showDepthMap = false;
 
   private final DepthTextureHandler depthTexture = new DepthTextureHandler();
   private final BackgroundRenderer backgroundRenderer = new BackgroundRenderer();
@@ -107,6 +109,18 @@ public class DepthCodelabActivity extends AppCompatActivity implements GLSurface
     surfaceView.setRenderer(this);
     surfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
     surfaceView.setWillNotDraw(false);
+
+    final Button toggleDepthButton = (Button) findViewById(R.id.toggle_depth_button);
+    toggleDepthButton.setOnClickListener(
+        view -> {
+          if (isDepthSupported) {
+            showDepthMap = !showDepthMap;
+            toggleDepthButton.setText(showDepthMap ? R.string.hide_depth : R.string.show_depth);
+          } else {
+            showDepthMap = false;
+            toggleDepthButton.setText(R.string.depth_not_available);
+          }
+        });
 
     installRequested = false;
   }
@@ -224,6 +238,7 @@ public class DepthCodelabActivity extends AppCompatActivity implements GLSurface
       depthTexture.createOnGlThread();
       // Create the texture and pass it to ARCore session to be filled during update().
       backgroundRenderer.createOnGlThread(/*context=*/ this);
+      backgroundRenderer.createDepthShaders(/*context=*/ this, depthTexture.getDepthTexture());
 
       virtualObject.createOnGlThread(/*context=*/ this, "models/andy.obj", "models/andy.png");
       virtualObject.setMaterialProperties(0.0f, 2.0f, 0.5f, 6.0f);
@@ -268,6 +283,10 @@ public class DepthCodelabActivity extends AppCompatActivity implements GLSurface
 
       // If frame is ready, render camera preview image to the GL surface.
       backgroundRenderer.draw(frame);
+
+      if (showDepthMap) {
+        backgroundRenderer.drawDepth(frame);
+      }
 
       // Keep the screen unlocked while tracking, but allow it to lock when tracking stops.
       trackingStateHelper.updateKeepScreenOnFlag(camera.getTrackingState());
