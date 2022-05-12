@@ -28,6 +28,7 @@ import com.google.ar.core.Anchor;
 import com.google.ar.core.ArCoreApk;
 import com.google.ar.core.Camera;
 import com.google.ar.core.Config;
+import com.google.ar.core.Coordinates2d;
 import com.google.ar.core.Frame;
 import com.google.ar.core.HitResult;
 import com.google.ar.core.Plane;
@@ -45,6 +46,7 @@ import com.google.ar.core.codelab.common.helpers.TapHelper;
 import com.google.ar.core.codelab.common.helpers.TrackingStateHelper;
 import com.google.ar.core.codelab.common.rendering.BackgroundRenderer;
 import com.google.ar.core.codelab.common.rendering.ObjectRenderer;
+import com.google.ar.core.codelab.common.rendering.OcclusionObjectRenderer;
 import com.google.ar.core.exceptions.CameraNotAvailableException;
 import com.google.ar.core.exceptions.UnavailableApkTooOldException;
 import com.google.ar.core.exceptions.UnavailableArcoreNotInstalledException;
@@ -75,10 +77,12 @@ public class DepthCodelabActivity extends AppCompatActivity implements GLSurface
   private TapHelper tapHelper;
   private boolean isDepthSupported;
   private boolean showDepthMap = false;
+  private boolean calculateUVTransform = true;
 
   private final DepthTextureHandler depthTexture = new DepthTextureHandler();
   private final BackgroundRenderer backgroundRenderer = new BackgroundRenderer();
   private final ObjectRenderer virtualObject = new ObjectRenderer();
+  private final OcclusionObjectRenderer occludedVirtualObject = new OcclusionObjectRenderer();
 
   // Temporary matrix allocated here to reduce number of allocations for each frame.
   private final float[] anchorMatrix = new float[16];
@@ -242,6 +246,15 @@ public class DepthCodelabActivity extends AppCompatActivity implements GLSurface
 
       virtualObject.createOnGlThread(/*context=*/ this, "models/andy.obj", "models/andy.png");
       virtualObject.setMaterialProperties(0.0f, 2.0f, 0.5f, 6.0f);
+
+      if (isDepthSupported) {
+        occludedVirtualObject.createOnGlThread(/*context=*/ this, "models/andy.obj", "models/andy.png");
+        occludedVirtualObject.setDepthTexture(
+            depthTexture.getDepthTexture(),
+            depthTexture.getDepthWidth(),
+            depthTexture.getDepthHeight());
+        occludedVirtualObject.setMaterialProperties(0.0f, 2.0f, 0.5f, 6.0f);
+      }
     } catch (IOException e) {
       Log.e(TAG, "Failed to read an asset file", e);
     }
@@ -273,6 +286,12 @@ public class DepthCodelabActivity extends AppCompatActivity implements GLSurface
       // camera framerate.
       Frame frame = session.update();
       Camera camera = frame.getCamera();
+
+      if (frame.hasDisplayGeometryChanged() || calculateUVTransform) {
+        calculateUVTransform = false;
+        float[] transform = getTextureTransformMatrix(frame);
+        occludedVirtualObject.setUvTransformMatrix(transform);
+      }
 
       if (isDepthSupported) {
         depthTexture.update(frame);
@@ -335,8 +354,13 @@ public class DepthCodelabActivity extends AppCompatActivity implements GLSurface
         anchor.getPose().toMatrix(anchorMatrix, 0);
 
         // Update and draw the model and its shadow.
-        virtualObject.updateModelMatrix(anchorMatrix, scaleFactor);
-        virtualObject.draw(viewmtx, projmtx, colorCorrectionRgba, OBJECT_COLOR);
+        if (isDepthSupported) {
+          occludedVirtualObject.updateModelMatrix(anchorMatrix, scaleFactor);
+          occludedVirtualObject.draw(viewmtx, projmtx, colorCorrectionRgba, OBJECT_COLOR);
+        } else {
+          virtualObject.updateModelMatrix(anchorMatrix, scaleFactor);
+          virtualObject.draw(viewmtx, projmtx, colorCorrectionRgba, OBJECT_COLOR);
+        }
       }
 
     } catch (Throwable t) {
@@ -400,5 +424,35 @@ public class DepthCodelabActivity extends AppCompatActivity implements GLSurface
     return (cameraX - planePose.tx()) * normal[0]
         + (cameraY - planePose.ty()) * normal[1]
         + (cameraZ - planePose.tz()) * normal[2];
+  }
+
+  private static float[] getTextureTransformMatrix(Frame frame) {
+    float[] frameTransform = new float[6];
+    float[] uvTransform = new float[9];
+    // XY pairs of coordinates in NDC space that constitute the origin and points along the two
+    // principal axes.
+    float[] ndcBasis = {0, 0, 1, 0, 0, 1};
+
+    // Temporarily store the transformed points into outputTransform.
+    frame.transformCoordinates2d(
+        Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,
+        ndcBasis,
+        Coordinates2d.TEXTURE_NORMALIZED,
+        frameTransform);
+
+    // Convert the transformed points into an affine transform and transpose it.
+    float ndcOriginX = frameTransform[0];
+    float ndcOriginY = frameTransform[1];
+    uvTransform[0] = frameTransform[2] - ndcOriginX;
+    uvTransform[1] = frameTransform[3] - ndcOriginY;
+    uvTransform[2] = 0;
+    uvTransform[3] = frameTransform[4] - ndcOriginX;
+    uvTransform[4] = frameTransform[5] - ndcOriginY;
+    uvTransform[5] = 0;
+    uvTransform[6] = ndcOriginX;
+    uvTransform[7] = ndcOriginY;
+    uvTransform[8] = 1;
+
+    return uvTransform;
   }
 }
